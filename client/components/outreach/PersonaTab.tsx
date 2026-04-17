@@ -1,9 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
-import { Toaster } from "sonner"
+import { toast } from "sonner"
 import { ComplianceFlag, ComplianceResult } from "@/types"
 import CompliancePanel from "@/components/compliance/CompliancePanel"
 
@@ -20,7 +19,6 @@ interface PersonaTabProps {
 }
 
 export default function PersonaTab({
-  draftKey,
   draft,
   personaLabel,
   personaDescription,
@@ -35,12 +33,6 @@ export default function PersonaTab({
   const [acceptedFlags, setAcceptedFlags] = useState<Set<number>>(new Set())
   const [rejectedFlags, setRejectedFlags] = useState<Set<number>>(new Set())
   
-
-  useEffect(() => {
-    setText(draft)
-    setAcceptedFlags(new Set())
-    setRejectedFlags(new Set())
-  }, [draft])
 
   function handleCopy() {
     navigator.clipboard.writeText(text)
@@ -58,7 +50,7 @@ export default function PersonaTab({
       next.delete(index)
       return next
     })
-    toast({ description: "Fix applied to draft." })
+    toast("Fix applied to draft.")
   }
 
   function handleReject(flag: ComplianceFlag, index: number) {
@@ -74,13 +66,7 @@ export default function PersonaTab({
     setRejectedFlags((prev) => new Set(prev).add(index))
   }
 
-  function handleUndoReject(_flag: ComplianceFlag, index: number) {
-    setRejectedFlags((prev) => {
-      const next = new Set(prev)
-      next.delete(index)
-      return next
-    })
-  }
+  const skeletonWidths = ["72%", "84%", "68%", "90%", "77%", "66%", "88%", "74%"]
 
   return (
     <div className="flex flex-col gap-4">
@@ -115,7 +101,7 @@ export default function PersonaTab({
                 <div
                   key={i}
                   className="h-4 bg-muted rounded"
-                  style={{ width: `${60 + Math.random() * 35}%` }}
+                  style={{ width: skeletonWidths[i % skeletonWidths.length] }}
                 />
               ))}
             </div>

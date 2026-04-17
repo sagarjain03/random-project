@@ -1,0 +1,14 @@
+fastapi>=0.111.0
+uvicorn>=0.30.0
+sqlalchemy>=2.0.30
+python-dotenv>=1.0.0
+google-generativeai>=0.7.2
+langchain>=0.2.6
+langchain-google-genai>=1.0.7
+llama-index>=0.10.51
+llama-index-vector-stores-chroma>=0.1.10
+chromadb>=0.5.3
+apscheduler>=3.10.4
+sendgrid>=6.11.0
+aiofiles>=23.2.1
+reportlab>=4.0.0

@@ -14,10 +14,11 @@ import {
 } from "@/components/ui/table"
 import { Lead } from "@/types"
 import { MOCK_LEADS } from "@/lib/mock-data"
-import { ping } from "@/lib/api"
+import { getLeads, ping, scoreLeads } from "@/lib/api"
 import ScoreBar from "@/components/leads/ScoreBar"
 import SignalBadge from "@/components/leads/SignalBadge"
 import LeadDrawer from "@/components/leads/LeadDrawer"
+import { toast } from "sonner"
 
 type SortKey = "score" | "name" | "industry"
 type SortDir = "asc" | "desc"
@@ -37,16 +38,7 @@ function getIndustryColor(industry: string) {
 }
 
 export default function LeadsPage() {
-
-    // backend hone k baad ye replace krna h bs
-//     const [leads, setLeads] = useState<Lead[]>([])
-
-// useEffect(() => {
-//   getLeads().then(({ data }) => {
-//     if (data) setLeads(data)
-//   })
-// }, [])
-  const [leads] = useState<Lead[]>(MOCK_LEADS)
+  const [leads, setLeads] = useState<Lead[]>(MOCK_LEADS)
   const [loading, setLoading] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -55,15 +47,43 @@ export default function LeadsPage() {
   const [search, setSearch] = useState("")
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("checking")
 
-  // M0: ping the API on mount and show connection status
+  async function loadLeads() {
+    const { data, error } = await getLeads()
+    if (error || !data) {
+      setConnectionStatus("offline")
+      setLeads(MOCK_LEADS)
+      if (error) {
+        toast.error(`Could not load leads: ${error}`)
+      }
+      return
+    }
+
+    setLeads(data)
+    setConnectionStatus("connected")
+  }
+
+  // On mount, verify API and load lead data.
   useEffect(() => {
-    ping().then(({ data, error }) => {
+    let mounted = true
+
+    async function bootstrap() {
+      const { data, error } = await ping()
+      if (!mounted) return
+
       if (error || !data) {
         setConnectionStatus("offline")
-      } else {
-        setConnectionStatus("connected")
+        setLeads(MOCK_LEADS)
+        return
       }
-    })
+
+      setConnectionStatus("connected")
+      await loadLeads()
+    }
+
+    void bootstrap()
+    return () => {
+      mounted = false
+    }
   }, [])
 
   const sorted = useMemo(() => {
@@ -93,13 +113,21 @@ export default function LeadsPage() {
     setDrawerOpen(true)
   }
 
-  function handleRescore() {
+  async function handleRescore() {
     setLoading(true)
-    // Swap this with: await scoreLeads() when Shreya's API is ready
-    setTimeout(() => setLoading(false), 1800)
+    const { data, error } = await scoreLeads()
+    if (error || !data) {
+      toast.error(error ?? "Failed to score leads")
+      setLoading(false)
+      return
+    }
+
+    toast.success(`Scored ${data.leads_scored} leads`)
+    await loadLeads()
+    setLoading(false)
   }
 
-  function SortIcon({ col }: { col: SortKey }) {
+  function renderSortIcon(col: SortKey) {
     if (sortKey !== col) return <span className="text-muted-foreground/40 ml-1">↕</span>
     return <span className="text-foreground ml-1">{sortDir === "desc" ? "↓" : "↑"}</span>
   }
@@ -157,22 +185,22 @@ export default function LeadsPage() {
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead
-                className="cursor-pointer select-none w-[200px]"
+                className="cursor-pointer select-none w-50"
                 onClick={() => handleSort("name")}
               >
-                Company <SortIcon col="name" />
+                Company {renderSortIcon("name")}
               </TableHead>
               <TableHead
-                className="cursor-pointer select-none w-[140px]"
+                className="cursor-pointer select-none w-35"
                 onClick={() => handleSort("industry")}
               >
-                Industry <SortIcon col="industry" />
+                Industry {renderSortIcon("industry")}
               </TableHead>
               <TableHead
-                className="cursor-pointer select-none w-[180px]"
+                className="cursor-pointer select-none w-45"
                 onClick={() => handleSort("score")}
               >
-                Score <SortIcon col="score" />
+                Score {renderSortIcon("score")}
               </TableHead>
               <TableHead>Buying signals</TableHead>
             </TableRow>

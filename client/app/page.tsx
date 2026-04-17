@@ -1,18 +1,64 @@
-import { getStats } from "@/lib/stats"
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
 import { MOCK_LEADS, MOCK_NUDGE_QUEUE } from "@/lib/mock-data"
 import StatCard from "@/components/dashboard/StatCard"
 import PageShell from "@/components/layout/PageShell"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
+import { Lead, NudgeItem } from "@/types"
+import { getLeads, getNudgeQueue } from "@/lib/api"
+import { toast } from "sonner"
 
 export default function DashboardPage() {
-  const stats = getStats()
+  const [leads, setLeads] = useState<Lead[]>(MOCK_LEADS)
+  const [queue, setQueue] = useState<NudgeItem[]>(MOCK_NUDGE_QUEUE)
 
-  const topLeads = [...MOCK_LEADS]
+  useEffect(() => {
+    async function loadDashboardData() {
+      const [leadsResult, queueResult] = await Promise.all([getLeads(), getNudgeQueue()])
+
+      if (!leadsResult.error && leadsResult.data) {
+        setLeads(leadsResult.data)
+      } else if (leadsResult.error) {
+        toast.error(`Leads API error: ${leadsResult.error}`)
+      }
+
+      if (!queueResult.error && queueResult.data) {
+        setQueue(queueResult.data)
+      } else if (queueResult.error) {
+        toast.error(`Nudge API error: ${queueResult.error}`)
+      }
+    }
+
+    void loadDashboardData()
+  }, [])
+
+  const stats = useMemo(() => {
+    const totalLeads = leads.length
+    const highIntent = leads.filter((l) => l.score >= 80).length
+    const avgScore = totalLeads > 0
+      ? Math.round(leads.reduce((sum, l) => sum + l.score, 0) / totalLeads)
+      : 0
+
+    const nudgeQueue = queue.length
+    const criticalPartners = queue.filter((p) => p.days_inactive >= 30).length
+
+    return {
+      totalLeads,
+      highIntent,
+      avgScore,
+      nudgeQueue,
+      criticalPartners,
+      totalFlags: 0,
+    }
+  }, [leads, queue])
+
+  const topLeads = [...leads]
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
 
-  const urgentPartners = MOCK_NUDGE_QUEUE
+  const urgentPartners = queue
     .filter((p) => p.days_inactive >= 14)
     .sort((a, b) => b.days_inactive - a.days_inactive)
     .slice(0, 3)
@@ -52,7 +98,7 @@ export default function DashboardPage() {
         <StatCard
           label="Compliance flags"
           value={stats.totalFlags}
-          sub="Across mock drafts"
+          sub="Run checks in Outreach"
           href="/outreach"
           accent={stats.totalFlags > 0 ? "amber" : "green"}
         />

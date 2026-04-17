@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import {
   Table,
   TableBody,
@@ -8,13 +8,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 // import { useToast } from "@/components/ui/use-toast"
 import { NudgeItem } from "@/types"
 import { MOCK_NUDGE_QUEUE } from "@/lib/mock-data"
 import NudgeRow from "@/components/nudge/NudgeRow"
 import { toast } from "sonner"
+import { getNudgeQueue, sendNudge } from "@/lib/api"
 
 type FilterStage = "All" | "Onboarding" | "Integration" | "Active" | "Stalled"
 type SortKey = "days_inactive" | "name" | "stage"
@@ -32,6 +32,21 @@ export default function NudgePage() {
   const [filter, setFilter] = useState<FilterStage>("All")
   const [sortKey, setSortKey] = useState<SortKey>("days_inactive")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
+
+  useEffect(() => {
+    async function loadQueue() {
+      const { data, error } = await getNudgeQueue()
+      if (error || !data) {
+        if (error) {
+          toast.error(`Could not load nudge queue: ${error}`)
+        }
+        return
+      }
+      setQueue(data)
+    }
+
+    void loadQueue()
+  }, [])
 
   const visible = useMemo(() => {
     const filtered = queue.filter((item) => {
@@ -59,28 +74,32 @@ export default function NudgePage() {
     else { setSortKey(key); setSortDir("desc") }
   }
 
-  function handleSend(item: NudgeItem) {
+  async function handleSend(item: NudgeItem) {
     setSending((prev) => new Set(prev).add(item.partner_id))
-    // Swap with: sendNudge(item.partner_id) when Shreya's API is ready
-    setTimeout(() => {
-      setSending((prev) => {
-        const next = new Set(prev)
-        next.delete(item.partner_id)
-        return next
-      })
-      setSent((prev) => new Set(prev).add(item.partner_id))
-      toast(`Nudge sent to ${item.name}.`)
-    }, 1600)
+
+    const { data, error } = await sendNudge(item.partner_id)
+
+    setSending((prev) => {
+      const next = new Set(prev)
+      next.delete(item.partner_id)
+      return next
+    })
+
+    if (error || !data) {
+      toast.error(error ?? `Could not send nudge to ${item.name}`)
+      return
+    }
+
+    setSent((prev) => new Set(prev).add(item.partner_id))
+    toast.success(data.message)
   }
 
   function handleDismiss(partnerId: string) {
     setDismissed((prev) => new Set(prev).add(partnerId))
-    toast({
-      description: "Partner removed from nudge queue.",
-    })
+    toast("Partner removed from nudge queue.")
   }
 
-  function SortIcon({ col }: { col: SortKey }) {
+  function renderSortIcon(col: SortKey) {
     if (sortKey !== col)
       return <span className="text-muted-foreground/40 ml-1">↕</span>
     return (
@@ -99,7 +118,7 @@ export default function NudgePage() {
         <div>
           <h1 className="text-2xl font-semibold">Nudge queue</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Partners who haven't activated since signing
+            Partners who haven&apos;t activated since signing
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -155,21 +174,21 @@ export default function NudgePage() {
                   className="cursor-pointer select-none"
                   onClick={() => handleSort("name")}
                 >
-                  Partner <SortIcon col="name" />
+                  Partner {renderSortIcon("name")}
                 </TableHead>
                 <TableHead
-                  className="cursor-pointer select-none w-[140px]"
+                  className="cursor-pointer select-none w-35"
                   onClick={() => handleSort("stage")}
                 >
-                  Stage <SortIcon col="stage" />
+                  Stage {renderSortIcon("stage")}
                 </TableHead>
                 <TableHead
-                  className="cursor-pointer select-none w-[180px]"
+                  className="cursor-pointer select-none w-45"
                   onClick={() => handleSort("days_inactive")}
                 >
-                  Inactive <SortIcon col="days_inactive" />
+                  Inactive {renderSortIcon("days_inactive")}
                 </TableHead>
-                <TableHead className="w-[100px] text-right">Action</TableHead>
+                <TableHead className="w-25 text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

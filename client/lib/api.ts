@@ -1,4 +1,6 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL
+import { ComplianceResult, Lead, NudgeItem, OutreachDrafts } from "@/types"
+
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 async function request<T>(
   path: string,
@@ -15,7 +17,7 @@ async function request<T>(
     }
     const json = await res.json()
     return { data: json.data, error: null }
-  } catch (e) {
+  } catch {
     return { data: null, error: "Could not reach the server" }
   }
 }
@@ -23,28 +25,29 @@ async function request<T>(
 // ── M0 ──────────────────────────────────────────────
 export const ping = () => request<{ status: string }>("/api/ping")
 
-// ── M1 (add these when you start M1) ────────────────
-// export const getLeads = () => request<Lead[]>("/api/leads")
-// export const scoreLeads = () => request<null>("/api/leads/score", { method: "POST" })
+// ── M1 ──────────────────────────────────────────────
+export const getLeads = () => request<Lead[]>("/api/leads")
+export const scoreLeads = () =>
+  request<{ leads_scored: number }>("/api/leads/score", { method: "POST" })
 
 // ── M2 ──────────────────────────────────────────────
-// export const generateOutreach = (leadId: string) =>
-//   request<OutreachDrafts>("/api/outreach/generate", {
-//     method: "POST",
-//     body: JSON.stringify({ lead_id: leadId }),
-//   })
+export const generateOutreach = (leadId: string) =>
+  request<OutreachDrafts>("/api/outreach/generate", {
+    method: "POST",
+    body: JSON.stringify({ lead_id: leadId }),
+  })
 
 // ── M3 ──────────────────────────────────────────────
-// export const checkCompliance = (draft: string) =>
-//   request<ComplianceResult>("/api/compliance/check", {
-//     method: "POST",
-//     body: JSON.stringify({ draft }),
-//   })
+export const checkCompliance = (draft: string) =>
+  request<ComplianceResult>("/api/compliance/check", {
+    method: "POST",
+    body: JSON.stringify({ draft }),
+  })
 
 // ── M4 ──────────────────────────────────────────────
-// export const getNudgeQueue = () => request<NudgeItem[]>("/api/nudge/queue")
-// export const sendNudge = (partnerId: string) =>
-//   request<null>("/api/nudge/send", {
-//     method: "POST",
-//     body: JSON.stringify({ partner_id: partnerId }),
-//   })
+export const getNudgeQueue = () => request<NudgeItem[]>("/api/nudge/queue")
+export const sendNudge = (partnerId: string) =>
+  request<{ message: string; partner_name: string }>("/api/nudge/send", {
+    method: "POST",
+    body: JSON.stringify({ partner_id: partnerId }),
+  })

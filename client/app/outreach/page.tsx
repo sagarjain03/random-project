@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { MOCK_LEADS, getMockOutreach, getMockCompliance } from "@/lib/mock-data"
+import { MOCK_LEADS } from "@/lib/mock-data"
 import { OutreachDrafts, Lead, ComplianceResult } from "@/types"
 import PersonaTab from "@/components/outreach/PersonaTab"
-import ComplianceBadge from "@/components/compliance/ComplianceBadge"
+import { checkCompliance, generateOutreach, getLeads } from "@/lib/api"
+import { toast } from "sonner"
 
 const PERSONAS = [
   {
@@ -37,11 +38,14 @@ const PERSONAS = [
 
 type ComplianceState = Record<string, ComplianceResult | null>
 type CheckingState = Record<string, boolean>
+const GENERATING_SKELETON_WIDTHS = ["71%", "86%", "69%", "93%", "80%", "74%", "88%", "67%"]
 
 export default function OutreachPage() {
   const params = useSearchParams()
+  const initialLeadId = params.get("lead") ?? ""
 
-  const [selectedLeadId, setSelectedLeadId] = useState<string>("")
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [selectedLeadId, setSelectedLeadId] = useState<string>(initialLeadId)
   const [drafts, setDrafts] = useState<OutreachDrafts | null>(null)
   const [generating, setGenerating] = useState(false)
   const [regeneratingKey, setRegeneratingKey] = useState<keyof OutreachDrafts | null>(null)
@@ -49,58 +53,86 @@ export default function OutreachPage() {
   const [compliance, setCompliance] = useState<ComplianceState>({})
   const [checking, setChecking] = useState<CheckingState>({})
 
-  const selectedLead: Lead | undefined = MOCK_LEADS.find((l) => l.id === selectedLeadId)
+  const selectedLead: Lead | undefined = leads.find((l) => l.id === selectedLeadId)
 
-  // Pre-select lead from URL ?lead=X
   useEffect(() => {
-    const id = params.get("lead")
-    if (id) setSelectedLeadId(id)
-  }, [params])
+    async function loadLeadOptions() {
+      const { data, error } = await getLeads()
+      if (error || !data) {
+        setLeads(MOCK_LEADS)
+        if (error) {
+          toast.error(`Could not load leads from API: ${error}`)
+        }
+        return
+      }
+      setLeads(data)
+    }
+
+    void loadLeadOptions()
+  }, [])
 
   // Run compliance check for a single draft key
-  function runComplianceFor(draftKey: string, delay = 1400) {
+  async function runComplianceFor(draftKey: string, draftText: string) {
     setChecking((prev) => ({ ...prev, [draftKey]: true }))
     setCompliance((prev) => ({ ...prev, [draftKey]: null }))
-    // Swap with: checkCompliance(draft) when Shreya's API is ready
-    setTimeout(() => {
-      setCompliance((prev) => ({
-        ...prev,
-        [draftKey]: getMockCompliance(draftKey),
-      }))
+
+    const { data, error } = await checkCompliance(draftText)
+    if (error || !data) {
       setChecking((prev) => ({ ...prev, [draftKey]: false }))
-    }, delay)
+      toast.error(error ?? "Compliance check failed")
+      return
+    }
+
+    setCompliance((prev) => ({
+      ...prev,
+      [draftKey]: data,
+    }))
+    setChecking((prev) => ({ ...prev, [draftKey]: false }))
   }
 
-  // Run compliance for all 3 drafts with staggered delays
-  function runAllCompliance() {
-    PERSONAS.forEach((p, i) => runComplianceFor(p.draftKey, 1000 + i * 600))
+  // Run compliance for all drafts in parallel.
+  async function runAllCompliance(nextDrafts: OutreachDrafts) {
+    await Promise.all(
+      PERSONAS.map((p) => runComplianceFor(p.draftKey, nextDrafts[p.key]))
+    )
   }
 
-  function handleGenerate() {
+  async function handleGenerate() {
     if (!selectedLeadId) return
+
     setGenerating(true)
     setDrafts(null)
     setCompliance({})
     setChecking({})
-    // Swap with: generateOutreach(selectedLeadId) when Shreya's API is ready
-    setTimeout(() => {
-      setDrafts(getMockOutreach(selectedLeadId))
+
+    const { data, error } = await generateOutreach(selectedLeadId)
+    if (error || !data) {
       setGenerating(false)
-      // Auto-run compliance after generation
-      setTimeout(() => runAllCompliance(), 300)
-    }, 2000)
+      toast.error(error ?? "Failed to generate outreach")
+      return
+    }
+
+    setDrafts(data)
+    setGenerating(false)
+    await runAllCompliance(data)
   }
 
-  function handleRegenerate(key: keyof OutreachDrafts) {
+  async function handleRegenerate(key: keyof OutreachDrafts) {
     if (!selectedLeadId) return
+
     setRegeneratingKey(key)
-    setTimeout(() => {
-      const fresh = getMockOutreach(selectedLeadId)
-      setDrafts((prev) => (prev ? { ...prev, [key]: fresh[key] } : fresh))
+
+    const { data, error } = await generateOutreach(selectedLeadId)
+    if (error || !data) {
       setRegeneratingKey(null)
-      // Re-run compliance for this tab after regeneration
-      setTimeout(() => runComplianceFor(key as string), 200)
-    }, 1500)
+      toast.error(error ?? "Failed to regenerate draft")
+      return
+    }
+
+    const nextDrafts = drafts ? { ...drafts, [key]: data[key] } : data
+    setDrafts(nextDrafts)
+    setRegeneratingKey(null)
+    await runComplianceFor(String(key), nextDrafts[key])
   }
 
   // Badge shown on each tab trigger
@@ -143,10 +175,10 @@ export default function OutreachPage() {
               setCompliance({})
               setChecking({})
             }}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring min-w-[220px]"
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring min-w-55"
           >
             <option value="">Choose a company…</option>
-            {MOCK_LEADS.map((lead) => (
+            {leads.map((lead) => (
               <option key={lead.id} value={lead.id}>
                 {lead.name} — {lead.industry}
               </option>
@@ -202,7 +234,7 @@ export default function OutreachPage() {
           </div>
           <div className="flex flex-col gap-2 animate-pulse">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-4 bg-muted rounded" style={{ width: `${65 + Math.random() * 30}%` }} />
+              <div key={i} className="h-4 bg-muted rounded" style={{ width: GENERATING_SKELETON_WIDTHS[i % GENERATING_SKELETON_WIDTHS.length] }} />
             ))}
           </div>
         </div>
@@ -220,7 +252,7 @@ export default function OutreachPage() {
                 variant="outline"
                 size="sm"
                 className="text-xs h-7"
-                onClick={runAllCompliance}
+                onClick={() => drafts && runAllCompliance(drafts)}
                 disabled={Object.values(checking).some(Boolean)}
               >
                 Re-check all
@@ -245,6 +277,7 @@ export default function OutreachPage() {
                 {PERSONAS.map((p) => (
                   <TabsContent key={p.key} value={p.tab} className="mt-0">
                     <PersonaTab
+                      key={`${p.key}-${selectedLeadId}-${drafts[p.key].length}`}
                       draftKey={p.draftKey}
                       draft={drafts[p.key]}
                       personaLabel={p.label}
@@ -253,7 +286,7 @@ export default function OutreachPage() {
                       onRegenerate={() => handleRegenerate(p.key)}
                       complianceResult={compliance[p.draftKey] ?? null}
                       complianceChecking={checking[p.draftKey] ?? false}
-                      onRerunCompliance={() => runComplianceFor(p.draftKey)}
+                      onRerunCompliance={() => runComplianceFor(p.draftKey, drafts[p.key])}
                     />
                   </TabsContent>
                 ))}
